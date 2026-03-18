@@ -9,7 +9,13 @@ import { Renderer, getParamSummary } from './modules/ui-render.js';
 import { setupDragAndDrop } from './modules/drag-drop.js';
 import { runFlow, handleMessage, handlePicker, getLastPickerTabId } from './modules/execution.js';
 import { cacheDOMRefs } from './modules/dom-refs.js';
-import { cloneBlock, setupContextMenu, setupKeyboardShortcuts } from './modules/shortcuts.js';
+import {
+    cloneBlock,
+    copyBlockToGlobalClipboard,
+    pasteBlockFromGlobalClipboard,
+    setupContextMenu,
+    setupKeyboardShortcuts
+} from './modules/shortcuts.js';
 import { handleBackupDownload, handleRestoreFileChange } from './modules/backup.js';
 
 // DOM Referansları
@@ -78,6 +84,8 @@ function setupGlobalEvents() {
         onSave: saveCurrentFlow,
         onRun: () => runFlow(State, DOM, saveCurrentFlow),
         onDelete: removeBlock,
+        onCopy: handleCopyBlock,
+        onPaste: handlePasteBlock,
         onClone: handleCloneBlock,
         onEscape: closeConfig,
         getSelectedBlockId: () => State.selectedBlockId
@@ -268,6 +276,8 @@ function renderBuilder() {
 
         // 6. Context Menu (Sağ Tık)
         setupContextMenu(container, {
+            onCopy: handleCopyBlock,
+            onPaste: handlePasteBlock,
             onClone: handleCloneBlock,
             onDelete: removeBlock,
             onMoveUp: moveBlock,
@@ -333,6 +343,25 @@ function removeBlock(blockId) {
     }
     renderBuilder();
     refreshDirtyState();
+}
+
+async function handleCopyBlock(blockId) {
+    const ok = await copyBlockToGlobalClipboard(blockId, State.currentFlow);
+    if (ok) {
+        showToast('📄 Blok global panoya kopyalandı', DOM);
+    }
+}
+
+async function handlePasteBlock(blockId = null) {
+    const pasted = await pasteBlockFromGlobalClipboard(State.currentFlow, generateId, blockId);
+    if (pasted) {
+        renderBuilder();
+        selectBlock(pasted.id);
+        refreshDirtyState();
+        showToast('📥 Blok yapıştırıldı', DOM);
+    } else {
+        showToast('⚠️ Yapıştırılacak kopya blok bulunamadı', DOM);
+    }
 }
 
 function handleCloneBlock(blockId) {
@@ -420,7 +449,9 @@ function selectBlock(blockId) {
                 if (descEl) descEl.textContent = summary || '';
                 refreshDirtyState();
             }, (btn, key) => handlePicker(btn, key, State, DOM), (targetBlock, testBtn, outputEl) => {
-                testReadTextBlock(targetBlock, testBtn, outputEl);
+                testReadTextBlock(targetBlock, testBtn, outputEl, State, el);
+            }, {
+                variableOptions: getFlowVariableNames(State.currentFlow)
             });
 
             const flowSelectEls = configArea.querySelectorAll('[data-flow-select]');
@@ -570,7 +601,56 @@ function closeConfig() {
     });
 }
 
-async function testReadTextBlock(block, testBtn, outputEl) {
+function normalizeVariableName(text) {
+    const map = {
+        'ç': 'c', 'Ç': 'c', 'ğ': 'g', 'Ğ': 'g', 'ı': 'i', 'İ': 'i',
+        'ö': 'o', 'Ö': 'o', 'ş': 's', 'Ş': 's', 'ü': 'u', 'Ü': 'u'
+    };
+
+    const normalized = String(text || '')
+        .replace(/[çÇğĞıİöÖşŞüÜ]/g, ch => map[ch] || ch)
+        .toLowerCase()
+        .replace(/[^a-z0-9\s_-]/g, ' ')
+        .trim()
+        .replace(/[\s-]+/g, '_')
+        .replace(/^_+|_+$/g, '');
+
+    if (!normalized) return 'metin';
+    return normalized.slice(0, 40);
+}
+
+function getFlowVariableNames(flow) {
+    if (!flow || !Array.isArray(flow.blocks)) return [];
+
+    const vars = new Set();
+    flow.blocks.forEach(block => {
+        const variable = String(block?.params?.variable || '').trim();
+        if (variable) {
+            vars.add(variable.replace(/^\*/, ''));
+        }
+    });
+
+    return [...vars].sort((a, b) => a.localeCompare(b, 'tr'));
+}
+
+function getUniqueVariableName(baseName, flow, currentBlockId = null) {
+    const used = new Set();
+    if (flow && Array.isArray(flow.blocks)) {
+        flow.blocks.forEach(block => {
+            if (String(block?.id) === String(currentBlockId)) return;
+            const variable = String(block?.params?.variable || '').trim();
+            if (variable) used.add(variable.replace(/^\*/, ''));
+        });
+    }
+
+    if (!used.has(baseName)) return baseName;
+
+    let i = 2;
+    while (used.has(`${baseName}_${i}`)) i++;
+    return `${baseName}_${i}`;
+}
+
+async function testReadTextBlock(block, testBtn, outputEl, State, blockEl) {
     const selector = (block?.params?.selector || '').trim();
     if (!selector || !testBtn || !outputEl) return;
 
@@ -594,9 +674,24 @@ async function testReadTextBlock(block, testBtn, outputEl) {
             return;
         }
 
-        const text = response.data || '(boş metin)';
-        outputEl.textContent = `Çekilen metin: ${text}`;
+        const text = String(response.data || '').trim();
+        const safeText = text || '(boş metin)';
+
+        const baseVar = normalizeVariableName(text);
+        const autoVar = getUniqueVariableName(baseVar, State.currentFlow, block?.id);
+        block.params.variable = autoVar;
+
+        const variableInput = blockEl?.querySelector('.input[data-key="variable"]');
+        if (variableInput) variableInput.value = autoVar;
+
+        outputEl.textContent = `Çekilen metin: ${safeText}  →  değişken: ${autoVar}`;
         outputEl.classList.add('success');
+
+        const summary = getParamSummary(block);
+        const descEl = blockEl?.querySelector('.block-item-desc');
+        if (descEl) descEl.textContent = summary || '';
+
+        refreshDirtyState();
     } catch (error) {
         outputEl.textContent = `Hata: ${error.message}`;
         outputEl.classList.add('error');

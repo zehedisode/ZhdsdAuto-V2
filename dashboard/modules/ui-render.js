@@ -107,8 +107,9 @@ export const Renderer = {
     /**
      * Config Paneli
      */
-    renderConfig(block, container, onInput, onPick, onReadTextTest = null) {
+    renderConfig(block, container, onInput, onPick, onReadTextTest = null, options = {}) {
         const typeDef = BLOCK_TYPES[block.type];
+        const variableOptions = Array.isArray(options.variableOptions) ? options.variableOptions : [];
 
         // 1. Parametre Alanları
         let html = typeDef.params.map(p => {
@@ -117,6 +118,18 @@ export const Renderer = {
 
             if (p.type === 'text' || p.type === 'number') {
                 inputHtml = `<input type="${p.type}" class="input" data-key="${p.key}" value="${escapeHTML(val)}" placeholder="${p.placeholder || ''}">`;
+
+                const canInsertVariable = p.type === 'text' && p.key !== 'variable' && variableOptions.length > 0;
+                if (canInsertVariable) {
+                    inputHtml += `
+                        <div class="variable-insert-wrap">
+                            <select class="input variable-insert-select" data-target-key="${p.key}">
+                                <option value="">Değişken seç...</option>
+                                ${variableOptions.map(v => `<option value="*${escapeHTML(v)}">*${escapeHTML(v)}</option>`).join('')}
+                            </select>
+                        </div>
+                    `;
+                }
             } else if (p.type === 'select') {
                 inputHtml = `<select class="input" data-key="${p.key}">${p.options.map(o => `<option value="${o}" ${o === val ? 'selected' : ''}>${o}</option>`).join('')}</select>`;
             } else if (p.type === 'checkbox') {
@@ -207,6 +220,20 @@ export const Renderer = {
                     const outputEl = container.querySelector('.read-text-test-output');
                     onReadTextTest(block, btn, outputEl);
                 }
+            };
+        });
+
+        // Metin alanlarına değişken seçimi
+        container.querySelectorAll('.variable-insert-select').forEach(sel => {
+            sel.onchange = () => {
+                if (!sel.value) return;
+                const targetKey = sel.dataset.targetKey;
+                const targetInput = container.querySelector(`.input[data-key="${targetKey}"]`);
+                if (!targetInput) return;
+
+                targetInput.value = sel.value;
+                onInput(targetKey, sel.value);
+                sel.value = '';
             };
         });
     },

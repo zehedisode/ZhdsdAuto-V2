@@ -55,6 +55,23 @@
     border-color: #ef4444;
 }
 
+/* Değişken Seçimi */
+.variable-insert-wrap {
+    margin-top: 8px;
+}
+
+.variable-insert-select {
+    font-size: 12px;
+    padding: 8px 10px;
+    border-radius: 8px;
+    border: 1px solid rgba(99, 102, 241, 0.2);
+    background: rgba(99, 102, 241, 0.08);
+}
+
+.variable-insert-select:focus {
+    border-color: rgba(99, 102, 241, 0.45);
+}
+
 /* Read Text Test */
 .read-text-test-row {
     margin-top: 8px;

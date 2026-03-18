@@ -3,6 +3,8 @@
  * Dashboard için kısayol tuşları ve sağ tık menüsü
  */
 
+const GLOBAL_CLIPBOARD_KEY = 'globalBlockClipboard';
+
 /**
  * Bloğu klonla (derin kopya + yeni ID)
  */
@@ -21,15 +23,65 @@ export function cloneBlock(blockId, currentFlow, generateId) {
 }
 
 /**
+ * Bloğu global panoya kopyalar (akışlar arası)
+ */
+export async function copyBlockToGlobalClipboard(blockId, currentFlow) {
+    if (!currentFlow) return false;
+    const block = currentFlow.blocks.find(b => String(b.id) === String(blockId));
+    if (!block) return false;
+
+    const payload = {
+        copiedAt: Date.now(),
+        block: JSON.parse(JSON.stringify(block))
+    };
+
+    await chrome.storage.local.set({ [GLOBAL_CLIPBOARD_KEY]: payload });
+    return true;
+}
+
+/**
+ * Global panodaki bloğu mevcut akışa yapıştırır
+ */
+export async function pasteBlockFromGlobalClipboard(currentFlow, generateId, insertAfterBlockId = null) {
+    if (!currentFlow) return null;
+
+    const data = await chrome.storage.local.get(GLOBAL_CLIPBOARD_KEY);
+    const source = data?.[GLOBAL_CLIPBOARD_KEY]?.block;
+    if (!source) return null;
+
+    const clone = JSON.parse(JSON.stringify(source));
+    clone.id = generateId();
+
+    if (!clone.params || typeof clone.params !== 'object') {
+        clone.params = {};
+    }
+
+    const targetIndex = insertAfterBlockId
+        ? currentFlow.blocks.findIndex(b => String(b.id) === String(insertAfterBlockId))
+        : -1;
+
+    if (targetIndex >= 0) {
+        currentFlow.blocks.splice(targetIndex + 1, 0, clone);
+    } else {
+        currentFlow.blocks.push(clone);
+    }
+
+    return clone;
+}
+
+/**
  * Context Menu (Sağ Tık Menüsü)
  */
-export function setupContextMenu(container, { onClone, onDelete, onMoveUp, onMoveDown }) {
+export function setupContextMenu(container, { onCopy, onPaste, onClone, onDelete, onMoveUp, onMoveDown }) {
     let menu = document.getElementById('block-context-menu');
     if (!menu) {
         menu = document.createElement('div');
         menu.id = 'block-context-menu';
         menu.className = 'block-context-menu';
         menu.innerHTML = `
+            <button data-action="copy">📄 Kopyala <kbd>Ctrl+C</kbd></button>
+            <button data-action="paste">📥 Yapıştır <kbd>Ctrl+V</kbd></button>
+            <div class="context-menu-divider"></div>
             <button data-action="clone">📋 Klonla <kbd>Ctrl+D</kbd></button>
             <button data-action="moveUp">⬆️ Yukarı Taşı</button>
             <button data-action="moveDown">⬇️ Aşağı Taşı</button>
@@ -59,6 +111,8 @@ export function setupContextMenu(container, { onClone, onDelete, onMoveUp, onMov
             menu.classList.remove('visible');
 
             switch (action) {
+                case 'copy': onCopy(blockId); break;
+                case 'paste': onPaste(blockId); break;
                 case 'clone': onClone(blockId); break;
                 case 'delete': onDelete(blockId); break;
                 case 'moveUp': onMoveUp(blockId, 'up'); break;
@@ -77,7 +131,7 @@ export function setupContextMenu(container, { onClone, onDelete, onMoveUp, onMov
 /**
  * Keyboard Shortcuts
  */
-export function setupKeyboardShortcuts({ onSave, onRun, onDelete, onClone, onEscape, getSelectedBlockId }) {
+export function setupKeyboardShortcuts({ onSave, onRun, onDelete, onCopy, onPaste, onClone, onEscape, getSelectedBlockId }) {
     document.addEventListener('keydown', (e) => {
         // Input/textarea içindeyken kısayolları engelle (Ctrl hariç)
         const inInput = ['INPUT', 'TEXTAREA', 'SELECT'].includes(document.activeElement?.tagName);
@@ -89,8 +143,24 @@ export function setupKeyboardShortcuts({ onSave, onRun, onDelete, onClone, onEsc
             return;
         }
 
+        // Ctrl+C → Kopyala
+        if (e.ctrlKey && e.key.toLowerCase() === 'c' && !inInput) {
+            e.preventDefault();
+            const id = getSelectedBlockId();
+            if (id) onCopy(id);
+            return;
+        }
+
+        // Ctrl+V → Yapıştır
+        if (e.ctrlKey && e.key.toLowerCase() === 'v' && !inInput) {
+            e.preventDefault();
+            const id = getSelectedBlockId();
+            onPaste(id || null);
+            return;
+        }
+
         // Ctrl+D → Klonla
-        if (e.ctrlKey && e.key === 'd') {
+        if (e.ctrlKey && e.key.toLowerCase() === 'd') {
             e.preventDefault();
             const id = getSelectedBlockId();
             if (id) onClone(id);

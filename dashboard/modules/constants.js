@@ -215,7 +215,7 @@ export const BLOCK_TYPES = {
         details: 'Bir elementin içindeki metni okur.\n\n✂️ KELİME SEÇİMİ (İsteğe Bağlı):\nMetnin tamamını almak için boş bırakın.\n• Tek Kelime: Kaçıncı kelimeyi istiyorsanız o sayıyı yazın. (Örn: 2)\n• Aralık: Başlangıç ve bitiş sırasını tire ile yazın. (Örn: 1-3)',
         params: [
             { key: 'selector', label: 'Element', type: 'selector', required: true },
-            { key: 'variable', label: 'Değişken Adı', type: 'text', required: true, placeholder: 'örn: fiyat' },
+            { key: 'variable', label: 'Değişken Adı', type: 'text', required: true, placeholder: 'Seçilen metinden otomatik oluşturulur' },
             { key: 'wordIndex', label: 'Kelime Sırası (Opsiyonel)', type: 'text', placeholder: 'Örn: 2 veya 1-3' }
         ]
     },
