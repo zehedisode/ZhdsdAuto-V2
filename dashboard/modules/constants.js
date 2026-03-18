@@ -82,11 +82,10 @@ export const BLOCK_TYPES = {
         name: 'Tuş Gönder',
         color: '#3b82f6',
         description: 'Özel tuş kombinasyonu gönderir',
-        details: 'Enter, ESC, Tab gibi özel tuşları simüle eder.\n• Seçici: Tuşun gönderileceği alan (boş bırakılırsa tüm sayfaya gönderir).',
+        details: 'Enter, ESC, Tab gibi özel tuşları simüle eder. Tuş doğrudan aktif sayfaya gönderilir.',
         params: [
             { key: 'key', label: 'Tuş', type: 'select', options: ['Enter', 'Escape', 'Tab', 'Space', 'Backspace', 'ArrowDown', 'ArrowUp'], default: 'Enter' },
-            { key: 'modifier', label: 'Kombinasyon', type: 'select', options: ['yok', 'Ctrl', 'Alt', 'Shift'], default: 'yok' },
-            { key: 'selector', label: 'Hedef Element (Opsiyonel)', type: 'selector' }
+            { key: 'modifier', label: 'Kombinasyon', type: 'select', options: ['yok', 'Ctrl', 'Alt', 'Shift'], default: 'yok' }
         ]
     },
 

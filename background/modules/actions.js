@@ -23,9 +23,12 @@ export async function execInContent(engine, tabId, action, params) {
             const result = await chrome.scripting.executeScript({
                 target: { tabId },
                 func: (act, p) => {
-                    const el = document.querySelector(p.selector);
+                    const hasSelector = typeof p.selector === 'string' && p.selector.trim().length > 0;
+                    const el = hasSelector ? document.querySelector(p.selector) : null;
 
-                    if (!el && act !== 'WAITFORELEMENT') return { error: `Element bulunamadı: ${p.selector}` };
+                    if (!el && hasSelector && act !== 'WAITFORELEMENT' && act !== 'KEYBOARD') {
+                        return { error: `Element bulunamadı: ${p.selector}` };
+                    }
 
                     // Görünürlük kontrolü
                     if (el && act !== 'WAITFORELEMENT' && act !== 'READATTRIBUTE') {
