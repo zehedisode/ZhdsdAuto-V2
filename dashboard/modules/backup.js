@@ -111,7 +111,7 @@ export async function handleBackupDownload(State, DOM) {
     }
 }
 
-export function handleRestoreFileChange(event, State, DOM, renderFlowsView) {
+export function handleRestoreFileChange(event, State, DOM, renderFlowsView, onAfterRestore = null) {
     const file = event.target.files[0];
     if (!file) return;
 
@@ -134,6 +134,10 @@ export function handleRestoreFileChange(event, State, DOM, renderFlowsView) {
                 State.setFlows(savedFlows);
                 State.reset();
                 renderFlowsView();
+
+                if (typeof onAfterRestore === 'function') {
+                    await onAfterRestore(savedFlows);
+                }
 
                 if (skipped.length > 0) {
                     const skippedSummary = skipped.slice(0, 2).map(s => `${s.flowName}: ${s.reason}`).join(' | ');

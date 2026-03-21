@@ -69,7 +69,15 @@ function setupGlobalEvents() {
     // Backup / Restore
     DOM.backupDownloadBtn.onclick = () => handleBackupDownload(State, DOM);
     DOM.restoreTriggerBtn.onclick = () => DOM.restoreFileInput.click();
-    DOM.restoreFileInput.onchange = (e) => handleRestoreFileChange(e, State, DOM, renderFlowsView);
+    DOM.restoreFileInput.onchange = (e) => handleRestoreFileChange(
+        e,
+        State,
+        DOM,
+        renderFlowsView,
+        async (savedFlows) => {
+            await syncAllFlowButtons(savedFlows);
+        }
+    );
 
     // Konsol
     DOM.toggleConsoleBtn.onclick = toggleConsole;
@@ -528,7 +536,7 @@ async function saveCurrentFlow() {
     showToast('✅ Akış kaydedildi', DOM);
 }
 
-async function syncFlowButtons(flow) {
+function mapButtonStyle(p, flowId) {
     const COLOR_MAP = {
         'Mavi': '#3b82f6', 'Kırmızı': '#ef4444', 'Yeşil': '#10b981',
         'Sarı': '#f59e0b', 'İndigo': '#6366f1', 'Mor': '#8b5cf6',
@@ -540,54 +548,78 @@ async function syncFlowButtons(flow) {
     };
     const SIZE_MAP = { 'Küçük': 'sm', 'Normal': 'md', 'Büyük': 'lg' };
 
-    let buttons = await Storage.getButtons();
-    const removedButtons = buttons.filter(b => String(b.id).startsWith(`btn_block_${flow.id}_`));
-    buttons = buttons.filter(b => !String(b.id).startsWith(`btn_block_${flow.id}_`));
+    const bgColor = COLOR_MAP[p.color] || '#3b82f6';
+    const pos = POS_MAP[p.position] || 'bottom-right';
+    const size = SIZE_MAP[p.size] || 'sm';
 
-    const maxOrder = buttons.reduce((max, btn) => {
+    const style = {
+        position: 'fixed', zIndex: 999999,
+        backgroundColor: bgColor, color: '#ffffff',
+        borderRadius: '8px',
+        top: 'auto', bottom: 'auto', left: 'auto', right: 'auto'
+    };
+    if (pos === 'top-left') { style.top = '20px'; style.left = '20px'; }
+    if (pos === 'top-right') { style.top = '20px'; style.right = '20px'; }
+    if (pos === 'bottom-left') { style.bottom = '20px'; style.left = '20px'; }
+    if (pos === 'bottom-right') { style.bottom = '20px'; style.right = '20px'; }
+
+    return { style, size, flowId };
+}
+
+async function syncFlowButtons(flow) {
+    await syncAllFlowButtons([flow]);
+}
+
+async function syncAllFlowButtons(flowsToSync = State.flows) {
+    const flows = Array.isArray(flowsToSync) ? flowsToSync : [];
+    const targetFlowIds = new Set(flows.map(f => String(f.id)));
+
+    const existingButtons = await Storage.getButtons();
+    const existingOrderMap = new Map(
+        existingButtons
+            .filter(b => String(b.id).startsWith('btn_block_') && Number.isFinite(b?.order))
+            .map(b => [String(b.id), b.order])
+    );
+
+    let preservedButtons = existingButtons.filter(b => {
+        const id = String(b.id);
+        if (!id.startsWith('btn_block_')) return true;
+        return !targetFlowIds.has(id.split('_')[2]);
+    });
+
+    let nextOrder = preservedButtons.reduce((max, btn) => {
         const order = Number.isFinite(btn?.order) ? btn.order : -1;
         return Math.max(max, order);
-    }, -1);
+    }, -1) + 1;
 
-    let nextOrder = maxOrder + 1;
+    flows.forEach(flow => {
+        const blocks = Array.isArray(flow?.blocks) ? flow.blocks : [];
+        blocks.filter(b => b.type === 'addButton').forEach(block => {
+            const p = block.params || {};
+            if (!p.urlPattern) return;
 
-    flow.blocks.filter(b => b.type === 'addButton').forEach(block => {
-        const p = block.params;
-        const resolvedFlowId = p.flowId || flow.id;
-        if (!p.urlPattern) return;
+            const btnId = `btn_block_${flow.id}_${block.id}`;
+            const resolvedFlowId = p.flowId || flow.id;
+            const mapped = mapButtonStyle(p, resolvedFlowId);
 
-        const bgColor = COLOR_MAP[p.color] || '#3b82f6';
-        const pos = POS_MAP[p.position] || 'bottom-right';
-        const size = SIZE_MAP[p.size] || 'sm';
+            const existingOrder = existingOrderMap.get(btnId);
+            const order = Number.isFinite(existingOrder) ? existingOrder : nextOrder++;
 
-        const style = {
-            position: 'fixed', zIndex: 999999,
-            backgroundColor: bgColor, color: '#ffffff',
-            borderRadius: '8px',
-            top: 'auto', bottom: 'auto', left: 'auto', right: 'auto'
-        };
-        if (pos === 'top-left') { style.top = '20px'; style.left = '20px'; }
-        if (pos === 'top-right') { style.top = '20px'; style.right = '20px'; }
-        if (pos === 'bottom-left') { style.bottom = '20px'; style.left = '20px'; }
-        if (pos === 'bottom-right') { style.bottom = '20px'; style.right = '20px'; }
-
-        const btnId = `btn_block_${flow.id}_${block.id}`;
-        const existing = removedButtons.find(b => String(b.id) === btnId);
-
-        buttons.push({
-            id: btnId,
-            flowId: resolvedFlowId,
-            urlPattern: p.urlPattern,
-            label: p.label || 'Çalıştır',
-            tooltip: p.tooltip || '',
-            size,
-            pulse: p.pulse !== false && p.pulse !== 'false',
-            order: Number.isFinite(existing?.order) ? existing.order : nextOrder++,
-            style
+            preservedButtons.push({
+                id: btnId,
+                flowId: mapped.flowId,
+                urlPattern: p.urlPattern,
+                label: p.label || 'Çalıştır',
+                tooltip: p.tooltip || '',
+                size: mapped.size,
+                pulse: p.pulse !== false && p.pulse !== 'false',
+                order,
+                style: mapped.style
+            });
         });
     });
 
-    await Storage.saveButtons(buttons);
+    await Storage.saveButtons(preservedButtons);
 }
 
 function moveBlock(id, dir) {
