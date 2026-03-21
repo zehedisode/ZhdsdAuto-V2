@@ -97,7 +97,9 @@
 
                 .btn-wrapper {
                     pointer-events: auto;
-                    display: flex;
+                    display: inline-flex;
+                    align-items: center;
+                    gap: 6px;
                     margin: 0;
                     padding: 0;
                     position: static !important;
@@ -111,6 +113,28 @@
                     outline: 2px dashed rgba(255,255,255,0.65);
                     outline-offset: 4px;
                     border-radius: 10px;
+                }
+
+                .zh-drag-handle {
+                    all: initial;
+                    width: 22px;
+                    height: 22px;
+                    display: inline-flex;
+                    align-items: center;
+                    justify-content: center;
+                    border-radius: 6px;
+                    color: rgba(255, 255, 255, 0.9);
+                    background: rgba(15, 23, 42, 0.5);
+                    border: 1px solid rgba(255, 255, 255, 0.2);
+                    cursor: grab;
+                    font-size: 12px;
+                    line-height: 1;
+                    user-select: none;
+                    pointer-events: auto;
+                }
+
+                .zh-drag-handle:active {
+                    cursor: grabbing;
                 }
 
                 .zh-btn {
@@ -185,7 +209,12 @@
             const wrapper = document.createElement('div');
             wrapper.className = 'btn-wrapper';
             wrapper.dataset.buttonId = String(btn.id);
-            wrapper.draggable = true;
+
+            const dragHandle = document.createElement('span');
+            dragHandle.className = 'zh-drag-handle';
+            dragHandle.textContent = '⠿';
+            dragHandle.title = 'Sıralamak için buradan sürükleyin';
+            dragHandle.draggable = true;
 
             const b = document.createElement('button');
             b.className = 'zh-btn';
@@ -205,14 +234,14 @@
                 if (btn.style.color) b.style.color = btn.style.color;
             }
 
-            wrapper.ondragstart = (e) => {
+            dragHandle.ondragstart = (e) => {
                 dragButtonId = String(btn.id);
                 wrapper.classList.add('dragging');
                 e.dataTransfer.effectAllowed = 'move';
                 e.dataTransfer.setData('text/plain', dragButtonId);
             };
 
-            wrapper.ondragend = () => {
+            dragHandle.ondragend = () => {
                 wrapper.classList.remove('dragging');
                 shadow.querySelectorAll('.btn-wrapper.drag-over').forEach(el => el.classList.remove('drag-over'));
                 dragButtonId = null;
@@ -251,6 +280,7 @@
                 });
             };
 
+            wrapper.appendChild(dragHandle);
             wrapper.appendChild(b);
             container.appendChild(wrapper);
         });

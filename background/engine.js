@@ -211,20 +211,29 @@ class FlowEngine {
                 if (pos === 'bottom-left') { style.bottom = '20px'; style.left = '20px'; }
                 if (pos === 'bottom-right') { style.bottom = '20px'; style.right = '20px'; }
 
+                const buttonId = `btn_block_${this.flow.id}_${block.id}`;
+                const data = await chrome.storage.local.get('buttons');
+                const buttons = Array.isArray(data.buttons) ? data.buttons : [];
+                const existingIdx = buttons.findIndex(b => b.id === buttonId);
+                const existing = existingIdx > -1 ? buttons[existingIdx] : null;
+
+                const maxOrder = buttons.reduce((max, btn) => {
+                    const order = Number.isFinite(btn?.order) ? btn.order : -1;
+                    return Math.max(max, order);
+                }, -1);
+
                 const newButton = {
-                    id: `btn_block_${this.flow.id}_${block.id}`,
+                    id: buttonId,
                     flowId: p.flowId || this.flow.id,
                     urlPattern: p.urlPattern || '',
                     label: p.label || 'Çalıştır',
                     tooltip: p.tooltip || '',
                     size,
                     pulse: p.pulse !== false && p.pulse !== 'false',
+                    order: Number.isFinite(existing?.order) ? existing.order : maxOrder + 1,
                     style
                 };
 
-                const data = await chrome.storage.local.get('buttons');
-                const buttons = data.buttons || [];
-                const existingIdx = buttons.findIndex(b => b.id === newButton.id);
                 if (existingIdx > -1) {
                     buttons[existingIdx] = newButton;
                 } else {
