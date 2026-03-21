@@ -9,6 +9,7 @@
     let host = null;
     let shadow = null;
     let lastUrl = location.href;
+    let dragButtonId = null;
 
     // Başlatıcı
     const init = () => {
@@ -33,14 +34,21 @@
 
     async function refresh() {
         const data = await chrome.storage.local.get(['buttons', 'flows']);
-        const buttons = data.buttons || [];
+        const buttons = Array.isArray(data.buttons) ? data.buttons : [];
         const flows = data.flows || [];
         const currentUrl = window.location.href;
 
-        const activeButtons = buttons.filter(btn => {
-            if (!btn.urlPattern) return false;
-            return currentUrl.toLowerCase().includes(btn.urlPattern.toLowerCase());
-        });
+        const activeButtons = buttons
+            .filter(btn => {
+                if (!btn?.urlPattern) return false;
+                return currentUrl.toLowerCase().includes(String(btn.urlPattern).toLowerCase());
+            })
+            .sort((a, b) => {
+                const ao = Number.isFinite(a?.order) ? a.order : Number.MAX_SAFE_INTEGER;
+                const bo = Number.isFinite(b?.order) ? b.order : Number.MAX_SAFE_INTEGER;
+                if (ao !== bo) return ao - bo;
+                return String(a.id).localeCompare(String(b.id));
+            });
 
         if (activeButtons.length === 0) {
             if (host) { host.remove(); host = null; }
@@ -89,11 +97,20 @@
 
                 .btn-wrapper {
                     pointer-events: auto;
-                    display: flex; /* Flex içindeki flex item */
+                    display: flex;
                     margin: 0;
                     padding: 0;
-                    margin-top: 8px; /* column-reverse için margin-top kullanılmalı */
                     position: static !important;
+                }
+
+                .btn-wrapper.dragging {
+                    opacity: 0.45;
+                }
+
+                .btn-wrapper.drag-over {
+                    outline: 2px dashed rgba(255,255,255,0.65);
+                    outline-offset: 4px;
+                    border-radius: 10px;
                 }
 
                 .zh-btn {
@@ -167,13 +184,15 @@
 
             const wrapper = document.createElement('div');
             wrapper.className = 'btn-wrapper';
+            wrapper.dataset.buttonId = String(btn.id);
+            wrapper.draggable = true;
 
             const b = document.createElement('button');
             b.className = 'zh-btn';
 
             // Konfigürasyon
             b.textContent = btn.label || flow.name;
-            b.title = btn.tooltip || flow.name;
+            b.title = `${btn.tooltip || flow.name}\n\nSıralamayı değiştirmek için bu butonu sürükleyin.`;
 
             if (btn.size) b.classList.add(btn.size);
             if (btn.pulse) b.classList.add('pulse');
@@ -186,7 +205,43 @@
                 if (btn.style.color) b.style.color = btn.style.color;
             }
 
+            wrapper.ondragstart = (e) => {
+                dragButtonId = String(btn.id);
+                wrapper.classList.add('dragging');
+                e.dataTransfer.effectAllowed = 'move';
+                e.dataTransfer.setData('text/plain', dragButtonId);
+            };
+
+            wrapper.ondragend = () => {
+                wrapper.classList.remove('dragging');
+                shadow.querySelectorAll('.btn-wrapper.drag-over').forEach(el => el.classList.remove('drag-over'));
+                dragButtonId = null;
+            };
+
+            wrapper.ondragover = (e) => {
+                e.preventDefault();
+                if (!dragButtonId || dragButtonId === String(btn.id)) return;
+                wrapper.classList.add('drag-over');
+            };
+
+            wrapper.ondragleave = () => {
+                wrapper.classList.remove('drag-over');
+            };
+
+            wrapper.ondrop = async (e) => {
+                e.preventDefault();
+                wrapper.classList.remove('drag-over');
+                const sourceId = dragButtonId || e.dataTransfer.getData('text/plain');
+                const targetId = String(btn.id);
+                if (!sourceId || !targetId || sourceId === targetId) return;
+                await reorderButtons(sourceId, targetId, activeButtons, corner);
+            };
+
             b.onclick = (e) => {
+                if (dragButtonId) {
+                    e.preventDefault();
+                    return;
+                }
                 e.preventDefault();
                 const oldText = b.textContent;
                 b.textContent = '⏳ ...';
@@ -199,6 +254,39 @@
             wrapper.appendChild(b);
             container.appendChild(wrapper);
         });
+    }
+
+    async function reorderButtons(sourceId, targetId, activeButtons, corner) {
+        const cornerButtons = activeButtons
+            .filter(btn => determineCorner(btn.style) === corner)
+            .map(btn => String(btn.id));
+
+        const sourceIndex = cornerButtons.indexOf(String(sourceId));
+        const targetIndex = cornerButtons.indexOf(String(targetId));
+        if (sourceIndex < 0 || targetIndex < 0) return;
+
+        const reordered = [...cornerButtons];
+        const [moved] = reordered.splice(sourceIndex, 1);
+        reordered.splice(targetIndex, 0, moved);
+
+        const data = await chrome.storage.local.get('buttons');
+        const allButtons = Array.isArray(data.buttons) ? data.buttons : [];
+
+        const involved = allButtons.filter(btn => reordered.includes(String(btn.id)));
+        const minOrder = involved.reduce((min, btn) => {
+            const order = Number.isFinite(btn?.order) ? btn.order : Number.MAX_SAFE_INTEGER;
+            return Math.min(min, order);
+        }, Number.MAX_SAFE_INTEGER);
+        const baseOrder = Number.isFinite(minOrder) && minOrder !== Number.MAX_SAFE_INTEGER ? minOrder : 0;
+
+        const rank = new Map(reordered.map((id, idx) => [id, baseOrder + idx]));
+        const updated = allButtons.map(btn => {
+            const id = String(btn.id);
+            if (!rank.has(id)) return btn;
+            return { ...btn, order: rank.get(id) };
+        });
+
+        await chrome.storage.local.set({ buttons: updated });
     }
 
     function determineCorner(s) {

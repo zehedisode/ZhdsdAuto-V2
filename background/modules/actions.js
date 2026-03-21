@@ -133,24 +133,42 @@ export async function execInContent(engine, tabId, action, params) {
                             case 'SCROLL':
                                 window.scrollBy({ top: p.amount || 500, behavior: 'smooth' });
                                 return { success: true };
-                            case 'READTEXT':
+                            case 'READTEXT': {
                                 let rawText = (el.innerText || el.textContent || el.value || '').trim();
-                                if (p.wordIndex) {
-                                    const words = rawText.split(/\s+/).filter(w => w.length > 0);
-                                    const input = p.wordIndex.toString().trim();
+                                const readMode = (p.readMode || 'kelime').toString().toLowerCase();
+                                const input = (p.wordIndex ?? '').toString().trim();
+
+                                if (input) {
                                     const rangeMatch = input.match(/^(\d+)[\s-]+(\d+)$/);
-                                    if (rangeMatch) {
-                                        const start = parseInt(rangeMatch[1], 10);
-                                        const end = parseInt(rangeMatch[2], 10);
-                                        if (start > 0 && end >= start) {
-                                            rawText = words.slice(start - 1, end).join(' ');
+
+                                    if (readMode === 'harf') {
+                                        if (rangeMatch) {
+                                            const start = parseInt(rangeMatch[1], 10);
+                                            const end = parseInt(rangeMatch[2], 10);
+                                            if (start > 0 && end >= start) {
+                                                rawText = rawText.slice(start - 1, end);
+                                            }
+                                        } else if (/^\d+$/.test(input)) {
+                                            const index = parseInt(input, 10);
+                                            rawText = (index > 0 && index <= rawText.length) ? rawText.charAt(index - 1) : '';
                                         }
-                                    } else if (input.match(/^\d+$/)) {
-                                        const index = parseInt(input, 10);
-                                        rawText = (index > 0 && index <= words.length) ? words[index - 1] : '';
+                                    } else {
+                                        const words = rawText.split(/\s+/).filter(w => w.length > 0);
+                                        if (rangeMatch) {
+                                            const start = parseInt(rangeMatch[1], 10);
+                                            const end = parseInt(rangeMatch[2], 10);
+                                            if (start > 0 && end >= start) {
+                                                rawText = words.slice(start - 1, end).join(' ');
+                                            }
+                                        } else if (/^\d+$/.test(input)) {
+                                            const index = parseInt(input, 10);
+                                            rawText = (index > 0 && index <= words.length) ? words[index - 1] : '';
+                                        }
                                     }
                                 }
+
                                 return { success: true, data: rawText };
+                            }
                             case 'READATTRIBUTE':
                                 return { success: true, data: el.getAttribute(p.attribute) };
                             case 'READTABLE': {

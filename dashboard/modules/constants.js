@@ -211,11 +211,12 @@ export const BLOCK_TYPES = {
         name: 'Metin Oku',
         color: '#f59e0b',
         description: 'Bir elementin metnini okur ve değişkene atar',
-        details: 'Bir elementin içindeki metni okur.\n\n✂️ KELİME SEÇİMİ (İsteğe Bağlı):\nMetnin tamamını almak için boş bırakın.\n• Tek Kelime: Kaçıncı kelimeyi istiyorsanız o sayıyı yazın. (Örn: 2)\n• Aralık: Başlangıç ve bitiş sırasını tire ile yazın. (Örn: 1-3)',
+        details: 'Bir elementin içindeki metni okur.\n\n✂️ İNDEKS SEÇİMİ (İsteğe Bağlı):\nMetnin tamamını almak için boş bırakın.\n• Mod: Kelime veya Harf seçebilirsiniz.\n• Tek Değer: Kaçıncı kelime/harf isteniyorsa o sayıyı yazın (Örn: 2).\n• Aralık: Başlangıç ve bitişi tire ile yazın (Örn: 3-15).',
         params: [
             { key: 'selector', label: 'Element', type: 'selector', required: true },
             { key: 'variable', label: 'Değişken Adı', type: 'text', required: true, placeholder: 'Seçilen metinden otomatik oluşturulur' },
-            { key: 'wordIndex', label: 'Kelime Sırası (Opsiyonel)', type: 'text', placeholder: 'Örn: 2 veya 1-3' }
+            { key: 'readMode', label: 'Okuma Modu', type: 'select', options: ['kelime', 'harf'], default: 'kelime' },
+            { key: 'wordIndex', label: 'Sıra / Aralık (Opsiyonel)', type: 'text', placeholder: 'Örn: 2 veya 3-15' }
         ]
     },
     readAttribute: {

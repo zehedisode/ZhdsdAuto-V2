@@ -541,7 +541,15 @@ async function syncFlowButtons(flow) {
     const SIZE_MAP = { 'Küçük': 'sm', 'Normal': 'md', 'Büyük': 'lg' };
 
     let buttons = await Storage.getButtons();
+    const removedButtons = buttons.filter(b => String(b.id).startsWith(`btn_block_${flow.id}_`));
     buttons = buttons.filter(b => !String(b.id).startsWith(`btn_block_${flow.id}_`));
+
+    const maxOrder = buttons.reduce((max, btn) => {
+        const order = Number.isFinite(btn?.order) ? btn.order : -1;
+        return Math.max(max, order);
+    }, -1);
+
+    let nextOrder = maxOrder + 1;
 
     flow.blocks.filter(b => b.type === 'addButton').forEach(block => {
         const p = block.params;
@@ -563,14 +571,18 @@ async function syncFlowButtons(flow) {
         if (pos === 'bottom-left') { style.bottom = '20px'; style.left = '20px'; }
         if (pos === 'bottom-right') { style.bottom = '20px'; style.right = '20px'; }
 
+        const btnId = `btn_block_${flow.id}_${block.id}`;
+        const existing = removedButtons.find(b => String(b.id) === btnId);
+
         buttons.push({
-            id: `btn_block_${flow.id}_${block.id}`,
+            id: btnId,
             flowId: resolvedFlowId,
             urlPattern: p.urlPattern,
             label: p.label || 'Çalıştır',
             tooltip: p.tooltip || '',
             size,
             pulse: p.pulse !== false && p.pulse !== 'false',
+            order: Number.isFinite(existing?.order) ? existing.order : nextOrder++,
             style
         });
     });
@@ -665,6 +677,7 @@ async function testReadTextBlock(block, testBtn, outputEl, State, blockEl) {
             type: 'TEST_READ_TEXT',
             selector,
             wordIndex: block?.params?.wordIndex || '',
+            readMode: block?.params?.readMode || 'kelime',
             tabId: getLastPickerTabId()
         });
 

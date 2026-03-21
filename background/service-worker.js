@@ -42,7 +42,7 @@ chrome.windows.onRemoved.addListener((windowId) => {
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     switch (message.type) {
         case 'RUN_FLOW':
-            handleRunFlow(message, sendResponse);
+            handleRunFlow(message, sender, sendResponse);
             return true;
         case 'STOP_FLOW':
             engine.stop();
@@ -70,10 +70,27 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 // ===================================================================
 // HELPERS
 // ===================================================================
-async function findWebTab() {
-    const allTabs = await chrome.tabs.query({ active: true });
-    const webTab = allTabs.find(t => t.url?.startsWith('http://') || t.url?.startsWith('https://'));
-    if (webTab) return webTab;
+function isWebUrl(url) {
+    return typeof url === 'string' && (url.startsWith('http://') || url.startsWith('https://'));
+}
+
+async function findWebTab(preferredTabId = null) {
+    if (Number.isInteger(preferredTabId) && preferredTabId > 0) {
+        try {
+            const preferred = await chrome.tabs.get(preferredTabId);
+            if (isWebUrl(preferred?.url)) return preferred;
+        } catch {
+            // Tab kapanmış olabilir, fallback'e geç.
+        }
+    }
+
+    const focusedWindow = await chrome.windows.getLastFocused({ populate: true });
+    const focusedActive = focusedWindow?.tabs?.find(t => t.active && isWebUrl(t.url));
+    if (focusedActive) return focusedActive;
+
+    const activeTabs = await chrome.tabs.query({ active: true, currentWindow: true });
+    const webActive = activeTabs.find(t => isWebUrl(t.url));
+    if (webActive) return webActive;
 
     const allWebTabs = await chrome.tabs.query({ url: ['http://*/*', 'https://*/*'] });
     if (allWebTabs.length > 0) {
@@ -83,9 +100,15 @@ async function findWebTab() {
     return null;
 }
 
-async function handleRunFlow(message, sendResponse) {
+async function handleRunFlow(message, sender, sendResponse) {
     try {
-        const tab = await findWebTab();
+        if (engine.running) {
+            sendResponse({ success: false, error: 'Zaten çalışan bir akış var. Önce mevcut akışı durdurun.' });
+            return;
+        }
+
+        const senderTabId = sender?.tab?.id;
+        const tab = await findWebTab(senderTabId);
         if (!tab && message.flow.blocks.some(b => !['navigate', 'newTab', 'wait', 'setVariable'].includes(b.type))) {
             sendResponse({ success: false, error: 'Açık bir web sayfası bulunamadı.' });
             return;
@@ -94,6 +117,17 @@ async function handleRunFlow(message, sendResponse) {
         sendResponse({ success: true });
         engine.run(message.flow, tab?.id || null, (status) => {
             chrome.runtime.sendMessage({ type: 'FLOW_STATUS', status }).catch(() => { });
+        }).catch((error) => {
+            chrome.runtime.sendMessage({
+                type: 'FLOW_STATUS',
+                status: {
+                    state: 'error',
+                    flowId: message.flow?.id,
+                    flowName: message.flow?.name,
+                    message: `❌ Hata: ${error.message}`,
+                    error: error.message
+                }
+            }).catch(() => { });
         });
     } catch (error) {
         sendResponse({ success: false, error: error.message });
@@ -132,26 +166,41 @@ async function handleTestReadText(message, sendResponse) {
 
         const [{ result }] = await chrome.scripting.executeScript({
             target: { tabId },
-            func: (selector, wordIndex) => {
+            func: (selector, wordIndex, readMode) => {
                 try {
                     const el = document.querySelector(selector);
                     if (!el) return { success: false, error: `Element bulunamadı: ${selector}` };
 
                     let rawText = (el.innerText || el.textContent || el.value || '').trim();
-                    if (wordIndex) {
-                        const words = rawText.split(/\s+/).filter(w => w.length > 0);
-                        const input = String(wordIndex).trim();
+                    const mode = (readMode || 'kelime').toString().toLowerCase();
+                    const input = String(wordIndex || '').trim();
+
+                    if (input) {
                         const rangeMatch = input.match(/^(\d+)[\s-]+(\d+)$/);
 
-                        if (rangeMatch) {
-                            const start = parseInt(rangeMatch[1], 10);
-                            const end = parseInt(rangeMatch[2], 10);
-                            if (start > 0 && end >= start) {
-                                rawText = words.slice(start - 1, end).join(' ');
+                        if (mode === 'harf') {
+                            if (rangeMatch) {
+                                const start = parseInt(rangeMatch[1], 10);
+                                const end = parseInt(rangeMatch[2], 10);
+                                if (start > 0 && end >= start) {
+                                    rawText = rawText.slice(start - 1, end);
+                                }
+                            } else if (/^\d+$/.test(input)) {
+                                const index = parseInt(input, 10);
+                                rawText = index > 0 && index <= rawText.length ? rawText.charAt(index - 1) : '';
                             }
-                        } else if (/^\d+$/.test(input)) {
-                            const index = parseInt(input, 10);
-                            rawText = index > 0 && index <= words.length ? words[index - 1] : '';
+                        } else {
+                            const words = rawText.split(/\s+/).filter(w => w.length > 0);
+                            if (rangeMatch) {
+                                const start = parseInt(rangeMatch[1], 10);
+                                const end = parseInt(rangeMatch[2], 10);
+                                if (start > 0 && end >= start) {
+                                    rawText = words.slice(start - 1, end).join(' ');
+                                }
+                            } else if (/^\d+$/.test(input)) {
+                                const index = parseInt(input, 10);
+                                rawText = index > 0 && index <= words.length ? words[index - 1] : '';
+                            }
                         }
                     }
 
@@ -160,7 +209,7 @@ async function handleTestReadText(message, sendResponse) {
                     return { success: false, error: error.message };
                 }
             },
-            args: [message.selector, message.wordIndex]
+            args: [message.selector, message.wordIndex, message.readMode]
         });
 
         sendResponse(result || { success: false, error: 'Test sonucu alınamadı.' });
